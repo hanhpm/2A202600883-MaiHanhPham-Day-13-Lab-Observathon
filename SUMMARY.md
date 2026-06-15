@@ -4,6 +4,8 @@
 
 - Current public headline score: **93.06 / 100**
 - Current public correct: **86 / 120**
+- Latest private headline score before the final shipping fix: **81.05 / 100**
+- Latest private correct before the final shipping fix: **40 / 80**
 - Phase: **Public**
 - Team: **MaiHanhPham** - StudentID: 2A202600883
 - Final run files:
@@ -128,6 +130,57 @@ prompt   0.890
 
 This version trades some latency for better robustness. It is preferred for the upcoming private phase because private is expected to contain more noisy notes, hidden instructions, and paraphrased requests.
 
+### 5. Private Phase Result And Extra Fix
+
+The first measured private score was:
+
+```text
+PRODUCTION SCORE (private) -- 80 q, 40 correct
+HEADLINE: 81.05 / 100
+correct  0.598
+quality  0.747
+error    1.000
+latency  0.406
+cost     0.298
+drift    0.800
+prompt   0.780
+diagnosis F1 0.625
+```
+
+Private had stronger edge cases:
+
+- `GHI CHU KHACH` prompt injection with fake unit price `1.000.000 VND`.
+- Contact noise mixed into the order.
+- Mojibake/encoding variants of Vietnamese destinations.
+- Unsupported delivery destinations such as `Vung Tau`, `Can Tho`, and `Da Lat`.
+
+The key private bug found after trace debugging:
+
+```json
+{"destination": "Vung Tau", "error": "destination_not_served", "cost_vnd": null}
+```
+
+The previous wrapper checked only whether `cost_vnd` existed. Because the key existed but was `null`, Python treated it like `0`, so the wrapper produced a fake total for unsupported shipping destinations.
+
+Fix added:
+
+```python
+if _needs_shipping(question) and (shipping.get("error") or shipping.get("cost_vnd") is None):
+    return "Khong ho tro giao hang den dia diem nay."
+```
+
+Private debug subset after the fix:
+
+```text
+dbg-vungtau-ipad -> Khong ho tro giao hang den dia diem nay.
+dbg-cantho-ipad  -> Khong ho tro giao hang den dia diem nay.
+dbg-dalat-iphone -> Khong ho tro giao hang den dia diem nay.
+dbg-note-ipad    -> Tong cong: 76534250 VND
+dbg-hai-phong-mojibake -> Tong cong: 54034250 VND
+```
+
+This fix has not yet been fully re-scored in the private leaderboard in this summary, but it directly targets several likely wrong private answers.
+
 ## Final Command Flow
 
 Run public simulator:
@@ -146,6 +199,24 @@ docker run --rm `
   -v "E:\Downloads\Lab_Handson_AI_Action\2A202600883-MaiHanhPham-Day-13-Lab-Observathon:/lab" `
   python:3.12-slim `
   bash -c "cd /lab && chmod +x bin/public/observathon-score && ./bin/public/observathon-score --run run_output.json --findings solution/findings.json --team MaiHanhPham --out score.json"
+```
+
+Run private simulator:
+
+```powershell
+docker run --rm --env-file .env `
+  -v "E:\Downloads\Lab_Handson_AI_Action\2A202600883-MaiHanhPham-Day-13-Lab-Observathon:/lab" `
+  python:3.12-slim `
+  bash -c "cd /lab && chmod +x bin/private/observathon-sim && ./bin/private/observathon-sim --config solution/config.json --wrapper solution/wrapper.py --out run_output_private.json --concurrency 8"
+```
+
+Run private scorer:
+
+```powershell
+docker run --rm `
+  -v "E:\Downloads\Lab_Handson_AI_Action\2A202600883-MaiHanhPham-Day-13-Lab-Observathon:/lab" `
+  python:3.12-slim `
+  bash -c "cd /lab && chmod +x bin/private/observathon-score && ./bin/private/observathon-score --run run_output_private.json --findings solution/findings.json --team MaiHanhPham --out score_private.json"
 ```
 
 ## Notes
