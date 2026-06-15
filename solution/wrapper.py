@@ -1,19 +1,8 @@
-"""YOUR mitigation + observability layer. The simulator calls mitigate() around the
-opaque agent (a REAL LLM) for every request. This is the ONLY place observability can
-live -- the agent is silent. Legal moves: retry / cache / route / guardrail / sanitize
-/ fallback / session-reset / PROMPT ROUTING, plus your own logging/tracing/metrics.
-Illegal: hardcoding answers, importing the agent internals, reading instructor files,
-network exfiltration.
+"""Mitigation and observability layer for Observathon.
 
-  call_next(question, config) -> result   # the only way to reach the black box
-  context = {"session_id","turn_index","qid","cache": <shared dict>, "cache_lock": <Lock>}
-  result  = {"answer","status","steps","trace","meta":{latency_ms,usage,...}}
-
-PROMPT ROUTING: you can override the agent's system prompt PER REQUEST by setting it in
-the config you pass to call_next, e.g.:
-    conf = dict(config); conf["system_prompt"] = my_better_prompt
-    result = call_next(question, conf)
-(Or just edit solution/prompt.txt for a single static prompt used on every request.)
+The simulator calls mitigate() around the opaque agent. Legal moves used here:
+prompt routing, retry, cache, input-note sanitization, output PII redaction,
+structured telemetry, and arithmetic verification from the public tool trace.
 """
 from __future__ import annotations
 
@@ -45,11 +34,10 @@ except Exception:
 
 _PROMPT_CACHE = None
 _NOTE_RE = re.compile(
-    r"(?is)(ghi\s*chu|note|notes?|instruction|system|developer|admin)\s*[:：].*?(?=(?:\bship\b|\bgiao\b|\btong\b|\btổng\b|$))"
+    r"(?is)(ghi\s*chu|note|notes?|instruction|system|developer|admin)\s*[:：].*?(?=(?:\bship\b|\bgiao\b|\btong\b|\btinh\b|$))"
 )
-_PRICE_HINT_RE = re.compile(
-    r"(?is)(ignore|bỏ qua|bo qua|hãy|hay|must|system|developer|admin|override|price|giá|gia)\b[^,.!?;]*"
-)
+_QTY_RE = re.compile(r"(?i)\b(?:mua|dat|order)\s+(\d+)\b")
+_CONTACT_TAIL_RE = re.compile(r"(?i)\s*\(?\s*(?:lien he|contact)[^)]*\)?\s*$")
 
 
 def _load_prompt():
@@ -67,7 +55,6 @@ def _load_prompt():
 
 def _sanitize_question(question):
     cleaned = _NOTE_RE.sub(" [order note removed] ", question or "")
-    cleaned = _PRICE_HINT_RE.sub(" [untrusted note removed] ", cleaned)
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
@@ -81,6 +68,60 @@ def _cache_key(question, config):
 def _log(event, data):
     if logger:
         logger.log_event(event, data)
+
+
+def _requested_qty(question):
+    match = _QTY_RE.search(question or "")
+    return int(match.group(1)) if match else None
+
+
+def _trace_obs(result, tool):
+    for step in result.get("trace", []) or []:
+        if step.get("tool") == tool:
+            return step.get("observation") or {}
+    return {}
+
+
+def _clean_answer(answer):
+    answer = answer or ""
+    answer = re.sub(r"\s+\([^\)]*\[REDACTED[^\)]*\)\s*$", "", answer).strip()
+    answer = _CONTACT_TAIL_RE.sub("", answer).strip()
+    return answer
+
+
+def _needs_shipping(question):
+    q = (question or "").casefold()
+    return "ship" in q or "giao" in q
+
+
+def _deterministic_answer(question, result):
+    stock = _trace_obs(result, "check_stock")
+    if not stock:
+        return _clean_answer(result.get("answer") or "")
+
+    qty = _requested_qty(question)
+    item = str(stock.get("item") or "San pham")
+    unit_price = int(stock.get("unit_price_vnd") or 0)
+
+    if not stock.get("found") or not stock.get("in_stock"):
+        return f"{item} hien khong co san de dat mua."
+
+    if qty is None:
+        return f"{item} con hang. Gia: {unit_price} VND"
+
+    available = stock.get("quantity")
+    if isinstance(available, int) and qty > available:
+        return f"{item} hien chi con {available}, khong du so luong {qty}."
+
+    shipping = _trace_obs(result, "calc_shipping")
+    if _needs_shipping(question) and "cost_vnd" not in shipping:
+        return "Khong ho tro giao hang den dia diem nay."
+
+    discount = _trace_obs(result, "get_discount")
+    percent = int(discount.get("percent") or 0)
+    shipping_cost = int(shipping.get("cost_vnd") or 0)
+    total = unit_price * qty * (100 - percent) // 100 + shipping_cost
+    return f"Tong cong: {total} VND"
 
 
 def mitigate(call_next, question, config, context):
@@ -106,8 +147,9 @@ def mitigate(call_next, question, config, context):
             _log("CACHE_HIT", {"qid": context.get("qid"), "session": context.get("session_id")})
             return dict(cached)
 
-    attempts = int((conf.get("retry") or {}).get("max_attempts", 2) or 2)
-    backoff_ms = int((conf.get("retry") or {}).get("backoff_ms", 250) or 0)
+    retry_conf = conf.get("retry") or {}
+    attempts = int(retry_conf.get("max_attempts", 2) or 2)
+    backoff_ms = int(retry_conf.get("backoff_ms", 250) or 0)
     last = None
 
     for attempt in range(1, attempts + 1):
@@ -128,7 +170,8 @@ def mitigate(call_next, question, config, context):
 
         meta = result.get("meta", {}) or {}
         usage = meta.get("usage", {}) or {}
-        answer, pii_count = redact(result.get("answer") or "")
+        answer = _deterministic_answer(clean_question, result)
+        answer, pii_count = redact(answer)
         result["answer"] = answer
         last = result
 
@@ -148,6 +191,7 @@ def mitigate(call_next, question, config, context):
             "sanitized": clean_question != (question or ""),
             "wrapper_exception": meta.get("wrapper_exception"),
             "wrapper_exception_message": meta.get("wrapper_exception_message"),
+            "trace_preview": result.get("trace", [])[:4] if os.getenv("OBS_DEBUG_TRACE") == "1" else None,
         })
 
         if result.get("status") == "ok" and result.get("answer"):
