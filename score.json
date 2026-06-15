@@ -1,0 +1,21 @@
+{
+  "team": "MaiHanhPham",
+  "phase": "public",
+  "headline": 70.17,
+  "sub": {
+    "correct": 0.4767,
+    "quality": 0.6839,
+    "error": 0.9917,
+    "latency": 0.3416,
+    "cost": 0.0,
+    "drift": 0.8246,
+    "prompt": 0.723
+  },
+  "diag_f1": 0.533,
+  "n": 120,
+  "n_correct": 56,
+  "judge_mode": "offline",
+  "weights_hash": "e81a8ed58d93",
+  "key_hash": "9a800fa6968d",
+  "sig": "c7f4758129dfaeda6f05f2a0233ba763bf1e27d2779c85aa828124203f434693"
+}

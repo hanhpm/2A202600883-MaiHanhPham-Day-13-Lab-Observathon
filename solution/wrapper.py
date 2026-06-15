@@ -120,7 +120,10 @@ def mitigate(call_next, question, config, context):
                 "status": "wrapper_error",
                 "steps": 0,
                 "trace": [],
-                "meta": {"wrapper_exception": type(exc).__name__},
+                "meta": {
+                    "wrapper_exception": type(exc).__name__,
+                    "wrapper_exception_message": str(exc)[:300],
+                },
             }
 
         meta = result.get("meta", {}) or {}
@@ -143,6 +146,8 @@ def mitigate(call_next, question, config, context):
             "tools_used": meta.get("tools_used", []),
             "pii_redactions": pii_count,
             "sanitized": clean_question != (question or ""),
+            "wrapper_exception": meta.get("wrapper_exception"),
+            "wrapper_exception_message": meta.get("wrapper_exception_message"),
         })
 
         if result.get("status") == "ok" and result.get("answer"):
