@@ -1,21 +1,21 @@
 {
   "team": "MaiHanhPham",
   "phase": "public",
-  "headline": 91.77,
+  "headline": 93.06,
   "sub": {
-    "correct": 0.8033,
-    "quality": 0.8701,
+    "correct": 0.8117,
+    "quality": 0.8751,
     "error": 1.0,
-    "latency": 0.4312,
-    "cost": 0.584,
-    "drift": 0.7871,
-    "prompt": 0.8793
+    "latency": 0.4083,
+    "cost": 0.5568,
+    "drift": 0.9606,
+    "prompt": 0.8899
   },
   "diag_f1": 0.533,
   "n": 120,
-  "n_correct": 85,
+  "n_correct": 86,
   "judge_mode": "offline",
   "weights_hash": "e81a8ed58d93",
   "key_hash": "9a800fa6968d",
-  "sig": "0756f9093145c0c97f8d6006be44bc99e5c02e61571e3c2118d32f83a02bf8d1"
+  "sig": "307e844c7338eb4b95fe3b7541b72c1715592c6b6d62f5d2bbfeb49014f0949c"
 }
