@@ -1,12 +1,36 @@
 {
-  "team": "TODO-team-name",
+  "team": "MaiHanhPham",
   "schema_version": 1,
   "findings": [
     {
-      "fault_class": "latency_spike",
-      "evidence": {"metric": "latency_p95_ms", "observed": "TODO from your telemetry", "trace_ids": []},
-      "root_cause": "TODO: what config knob or behavior causes it?",
-      "suggested_fix": "TODO: config change and/or wrapper mitigation"
+      "fault_class": "arithmetic_error",
+      "evidence": {"metric": "temperature_and_verify", "observed": "starter temperature=1.6, verify=false", "trace_ids": []},
+      "root_cause": "The original prompt did not require exact subtotal, discount, shipping, and final-total verification.",
+      "suggested_fix": "Rewrote prompt with explicit integer formula; set temperature=0.2, verify=true, self_consistency=2."
+    },
+    {
+      "fault_class": "fabrication",
+      "evidence": {"metric": "grounding_policy", "observed": "starter prompt did not require refusal for unknown or out-of-stock items", "trace_ids": []},
+      "root_cause": "The agent could invent totals without grounding on check_stock results.",
+      "suggested_fix": "Prompt now requires check_stock first and refusal with no total for unavailable or unknown items."
+    },
+    {
+      "fault_class": "prompt_injection",
+      "evidence": {"metric": "private_twist_risk", "observed": "README warns about fake system prices embedded in order notes", "trace_ids": []},
+      "root_cause": "Customer notes were not separated from trusted tool facts.",
+      "suggested_fix": "Prompt treats notes as untrusted data; wrapper removes note/instruction fragments before calling the agent."
+    },
+    {
+      "fault_class": "pii_leak",
+      "evidence": {"metric": "privacy_config", "observed": "starter redact_pii=false and no no-PII prompt rule", "trace_ids": []},
+      "root_cause": "No privacy guard existed at either prompt or wrapper boundary.",
+      "suggested_fix": "Enabled redact_pii, added no-PII prompt rule, and redacts wrapper output before returning."
+    },
+    {
+      "fault_class": "tool_overuse",
+      "evidence": {"metric": "tool_budget_and_loop_guard", "observed": "starter tool_budget=0, loop_guard=false, max_steps=12", "trace_ids": []},
+      "root_cause": "The agent had no constraint to use each commerce tool once.",
+      "suggested_fix": "Prompt caps each tool to one successful call; config enables loop_guard and tool_budget=4."
     }
   ]
 }
